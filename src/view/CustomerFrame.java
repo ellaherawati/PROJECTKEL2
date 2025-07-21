@@ -23,6 +23,7 @@ public class CustomerFrame extends JFrame {
     private NotaDAO notaDAO;
     private MenuDAO menuDAO;
     private UserDAO userDAO;
+    private PesananDibatalkanDAO pesananDibatalkanDAO; // Added for cancel order
     
     // Current user info
     private int currentUserId = 4; // Default customer ID, bisa diubah sesuai login
@@ -149,6 +150,7 @@ public class CustomerFrame extends JFrame {
         notaDAO = new NotaDAO();
         menuDAO = new MenuDAO();
         userDAO = new UserDAO();
+        pesananDibatalkanDAO = new PesananDibatalkanDAO(); // Initialize cancel order DAO
     }
     
     private void setCurrentCustomerInfo() {
@@ -534,20 +536,32 @@ public class CustomerFrame extends JFrame {
         totalPanel.add(totalTextLabel, BorderLayout.WEST);
         totalPanel.add(totalLabel, BorderLayout.EAST);
         
-        // Checkout button
-        JPanel checkoutPanel = new JPanel(new BorderLayout());
-        checkoutPanel.setBackground(new Color(248, 249, 250));
+        // Button panel with Checkout and Clear Cart buttons
+        JPanel buttonPanel = new JPanel(new GridLayout(2, 1, 0, 10));
+        buttonPanel.setBackground(new Color(248, 249, 250));
         
+        // Checkout button
         JButton checkoutButton = new JButton("Checkout");
         checkoutButton.setFont(new Font("Arial", Font.BOLD, 16));
-        checkoutButton.setBackground(new Color(217, 217, 217));
-        checkoutButton.setForeground(Color.BLACK);
+        checkoutButton.setBackground(new Color(40, 167, 69));
+        checkoutButton.setForeground(Color.WHITE);
         checkoutButton.setFocusPainted(false);
         checkoutButton.setBorderPainted(false);
         checkoutButton.setPreferredSize(new Dimension(300, 50));
         checkoutButton.addActionListener(e -> checkout());
         
-        checkoutPanel.add(checkoutButton, BorderLayout.CENTER);
+        // Clear cart button
+        JButton clearCartButton = new JButton("Bersihkan Keranjang");
+        clearCartButton.setFont(new Font("Arial", Font.BOLD, 14));
+        clearCartButton.setBackground(new Color(220, 53, 69));
+        clearCartButton.setForeground(Color.WHITE);
+        clearCartButton.setFocusPainted(false);
+        clearCartButton.setBorderPainted(false);
+        clearCartButton.setPreferredSize(new Dimension(300, 40));
+        clearCartButton.addActionListener(e -> clearCart());
+        
+        buttonPanel.add(checkoutButton);
+        buttonPanel.add(clearCartButton);
         
         orderPanel.add(orderTitle, BorderLayout.NORTH);
         orderPanel.add(cartScrollPane, BorderLayout.CENTER);
@@ -555,7 +569,7 @@ public class CustomerFrame extends JFrame {
         JPanel bottomPanel = new JPanel(new BorderLayout());
         bottomPanel.setBackground(new Color(248, 249, 250));
         bottomPanel.add(totalPanel, BorderLayout.NORTH);
-        bottomPanel.add(checkoutPanel, BorderLayout.CENTER);
+        bottomPanel.add(buttonPanel, BorderLayout.CENTER);
         
         orderPanel.add(bottomPanel, BorderLayout.SOUTH);
         
@@ -575,6 +589,31 @@ public class CustomerFrame extends JFrame {
         // Add new item
         orderItems.add(new OrderItem(item, 1));
         updateOrderDisplay();
+    }
+    
+    private void clearCart() {
+        if (orderItems.isEmpty()) {
+            JOptionPane.showMessageDialog(this, 
+                "Keranjang sudah kosong!", 
+                "Info", 
+                JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        
+        int choice = JOptionPane.showConfirmDialog(this,
+            "Apakah Anda yakin ingin mengosongkan keranjang?",
+            "Konfirmasi Bersihkan Keranjang",
+            JOptionPane.YES_NO_OPTION,
+            JOptionPane.QUESTION_MESSAGE);
+        
+        if (choice == JOptionPane.YES_OPTION) {
+            orderItems.clear();
+            updateOrderDisplay();
+            JOptionPane.showMessageDialog(this, 
+                "Keranjang berhasil dikosongkan!", 
+                "Berhasil", 
+                JOptionPane.INFORMATION_MESSAGE);
+        }
     }
     
     private void updateOrderDisplay() {
@@ -726,6 +765,50 @@ public class CustomerFrame extends JFrame {
         }
     }
     
+    /**
+     * Cancel order and save to pesanan_dibatalkan table
+     */
+    private void cancelOrder(int orderId, String cancelReason) {
+        try {
+            // 1. Update status pesanan menjadi 'dibatalkan'
+            if (customerOrderDAO.updateStatus(orderId, "dibatalkan")) {
+                // 2. Simpan ke tabel pesanan_dibatalkan
+                PesananDibatalkan pesananBatal = new PesananDibatalkan(
+                    orderId,
+                    new Timestamp(System.currentTimeMillis()),
+                    cancelReason
+                );
+                
+                if (pesananDibatalkanDAO.create(pesananBatal)) {
+                    JOptionPane.showMessageDialog(this,
+                        "Pesanan berhasil dibatalkan!\n" +
+                        "ID Pesanan: " + orderId + "\n" +
+                        "Alasan: " + cancelReason,
+                        "Pesanan Dibatalkan",
+                        JOptionPane.INFORMATION_MESSAGE);
+                    
+                    System.out.println("Order " + orderId + " cancelled successfully. Reason: " + cancelReason);
+                } else {
+                    JOptionPane.showMessageDialog(this,
+                        "Pesanan dibatalkan, tetapi gagal menyimpan ke log pembatalan.",
+                        "Peringatan",
+                        JOptionPane.WARNING_MESSAGE);
+                }
+            } else {
+                JOptionPane.showMessageDialog(this,
+                    "Gagal membatalkan pesanan!",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this,
+                "Error saat membatalkan pesanan: " + e.getMessage(),
+                "Error",
+                JOptionPane.ERROR_MESSAGE);
+        }
+    }
+    
     private void checkout() {
         if (orderItems.isEmpty()) {
             JOptionPane.showMessageDialog(this, "Keranjang masih kosong!", "Peringatan", JOptionPane.WARNING_MESSAGE);
@@ -773,13 +856,108 @@ public class CustomerFrame extends JFrame {
         JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
         mainPanel.add(summaryLabel, BorderLayout.NORTH);
         mainPanel.add(inputPanel, BorderLayout.CENTER);
-        mainPanel.add(new JLabel("Lanjutkan ke pembayaran?"), BorderLayout.SOUTH);
+        
+        // Create custom button panel with Cancel option
+        JPanel buttonPanel = new JPanel(new FlowLayout());
+        
+        JButton continueButton = new JButton("Lanjutkan ke Pembayaran");
+        continueButton.setBackground(new Color(40, 167, 69));
+        continueButton.setForeground(Color.WHITE);
+        continueButton.setFocusPainted(false);
+        
+        JButton cancelButton = new JButton("Batalkan Pesanan");
+        cancelButton.setBackground(new Color(220, 53, 69));
+        cancelButton.setForeground(Color.WHITE);
+        cancelButton.setFocusPainted(false);
+        
+        JButton backButton = new JButton("Kembali");
+        backButton.setBackground(new Color(108, 117, 125));
+        backButton.setForeground(Color.WHITE);
+        backButton.setFocusPainted(false);
+        
+        buttonPanel.add(continueButton);
+        buttonPanel.add(cancelButton);
+        buttonPanel.add(backButton);
+        
+        mainPanel.add(buttonPanel, BorderLayout.SOUTH);
 
-        int choice = JOptionPane.showConfirmDialog(this, mainPanel,
-                "Konfirmasi Pesanan", JOptionPane.YES_NO_OPTION, JOptionPane.PLAIN_MESSAGE);
-
-        if (choice != JOptionPane.YES_OPTION) {
-            return; // User cancelled
+        // Create custom dialog
+        JDialog orderDialog = new JDialog(this, "Konfirmasi Pesanan", true);
+        orderDialog.setSize(450, 400);
+        orderDialog.setLocationRelativeTo(this);
+        orderDialog.setContentPane(mainPanel);
+        
+        final boolean[] dialogResult = {false}; // false = back, true = continue
+        final boolean[] shouldCancel = {false};
+        
+        continueButton.addActionListener(e -> {
+            dialogResult[0] = true;
+            orderDialog.dispose();
+        });
+        
+        cancelButton.addActionListener(e -> {
+            // Show cancel reason dialog
+            String[] cancelOptions = {
+                "Berubah pikiran",
+                "Terlalu mahal", 
+                "Salah pesan",
+                "Waktu tunggu terlalu lama",
+                "Lainnya..."
+            };
+            
+            String selectedReason = (String) JOptionPane.showInputDialog(
+                orderDialog,
+                "Pilih alasan pembatalan atau ketik alasan Anda:",
+                "Alasan Pembatalan",
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                cancelOptions,
+                cancelOptions[0]
+            );
+            
+            if (selectedReason != null) {
+                if ("Lainnya...".equals(selectedReason)) {
+                    selectedReason = JOptionPane.showInputDialog(
+                        orderDialog,
+                        "Masukkan alasan pembatalan:",
+                        "Alasan Pembatalan",
+                        JOptionPane.PLAIN_MESSAGE
+                    );
+                    
+                    if (selectedReason == null || selectedReason.trim().isEmpty()) {
+                        selectedReason = "Tidak ada alasan";
+                    }
+                }
+                
+                shouldCancel[0] = true;
+                
+                // Clear the cart immediately when cancelled
+                orderItems.clear();
+                updateOrderDisplay();
+                
+                JOptionPane.showMessageDialog(orderDialog,
+                    "Pesanan dibatalkan.\nAlasan: " + selectedReason,
+                    "Pesanan Dibatalkan",
+                    JOptionPane.INFORMATION_MESSAGE);
+                
+                orderDialog.dispose();
+            }
+        });
+        
+        backButton.addActionListener(e -> {
+            dialogResult[0] = false;
+            orderDialog.dispose();
+        });
+        
+        orderDialog.setVisible(true);
+        
+        // Handle dialog result
+        if (shouldCancel[0]) {
+            return; // Order was cancelled, nothing more to do
+        }
+        
+        if (!dialogResult[0]) {
+            return; // User clicked back or closed dialog
         }
 
         String messageOptional = messageArea.getText().trim();
@@ -825,9 +1003,23 @@ public class CustomerFrame extends JFrame {
             }
             
             if (!allDetailsSaved) {
-                JOptionPane.showMessageDialog(this, 
-                    "Pesanan tersimpan, tetapi beberapa detail gagal disimpan.", 
-                    "Peringatan", JOptionPane.WARNING_MESSAGE);
+                // Give option to cancel the order if details failed to save
+                int choice = JOptionPane.showConfirmDialog(this,
+                    "Beberapa detail pesanan gagal disimpan.\n" +
+                    "Apakah Anda ingin membatalkan pesanan ini?",
+                    "Error Menyimpan Detail",
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.WARNING_MESSAGE);
+                
+                if (choice == JOptionPane.YES_OPTION) {
+                    cancelOrder(orderId, "Gagal menyimpan detail pesanan");
+                    return;
+                } else {
+                    JOptionPane.showMessageDialog(this, 
+                        "Pesanan tersimpan dengan ID: " + orderId + 
+                        "\nNamun beberapa detail gagal disimpan.", 
+                        "Peringatan", JOptionPane.WARNING_MESSAGE);
+                }
             } else {
                 JOptionPane.showMessageDialog(this, 
                     "Pesanan berhasil disimpan!\nID Pesanan: " + orderId + 
@@ -846,7 +1038,7 @@ public class CustomerFrame extends JFrame {
         }
     }
 
-    // PaymentMethodDialog class - properly defined
+    // PaymentMethodDialog class with cancel order integration
     class PaymentMethodDialog extends JDialog {
         private int orderId;
         private int totalAmount;
@@ -859,9 +1051,9 @@ public class CustomerFrame extends JFrame {
             this.orderId = orderId;
             this.totalAmount = totalAmount;
             this.parentFrame = (CustomerFrame) parent;
-            this.savedOrderItems = new ArrayList<>(savedOrderItems); // Copy to avoid reference issues
+            this.savedOrderItems = new ArrayList<>(savedOrderItems);
 
-            setSize(400, 250);
+            setSize(400, 300); // Increased height for cancel button
             setLocationRelativeTo(parent);
 
             JPanel panel = new JPanel();
@@ -879,6 +1071,9 @@ public class CustomerFrame extends JFrame {
             // Tombol Cash
             JButton cashButton = new JButton("Cash");
             cashButton.setPreferredSize(new Dimension(120, 80));
+            cashButton.setBackground(new Color(40, 167, 69));
+            cashButton.setForeground(Color.WHITE);
+            cashButton.setFocusPainted(false);
             cashButton.addActionListener(e -> {
                 selectedPaymentMethod = "cash";
                 processPayment();
@@ -888,6 +1083,9 @@ public class CustomerFrame extends JFrame {
             // Tombol QRIS
             JButton qrisButton = new JButton("QRIS");
             qrisButton.setPreferredSize(new Dimension(120, 80));
+            qrisButton.setBackground(new Color(0, 123, 255));
+            qrisButton.setForeground(Color.WHITE);
+            qrisButton.setFocusPainted(false);
             qrisButton.addActionListener(e -> {
                 selectedPaymentMethod = "qris";
                 showQRISPopup();
@@ -898,17 +1096,82 @@ public class CustomerFrame extends JFrame {
 
             panel.add(btnPanel, BorderLayout.CENTER);
 
-            // Tombol batal
-            JButton cancelButton = new JButton("Batal");
-            cancelButton.addActionListener(e -> {
+            // Panel tombol batal dengan opsi cancel order
+            JPanel bottomPanel = new JPanel(new BorderLayout());
+            
+            JButton cancelOrderButton = new JButton("Batalkan Pesanan");
+            cancelOrderButton.setBackground(new Color(220, 53, 69));
+            cancelOrderButton.setForeground(Color.WHITE);
+            cancelOrderButton.setFocusPainted(false);
+            cancelOrderButton.addActionListener(e -> showCancelOrderDialog());
+            
+            JButton backButton = new JButton("Kembali");
+            backButton.setBackground(new Color(108, 117, 125));
+            backButton.setForeground(Color.WHITE);
+            backButton.setFocusPainted(false);
+            backButton.addActionListener(e -> {
                 selectedPaymentMethod = null;
                 dispose();
             });
-            JPanel cancelPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-            cancelPanel.add(cancelButton);
-            panel.add(cancelPanel, BorderLayout.SOUTH);
+            
+            JPanel cancelPanel = new JPanel(new FlowLayout());
+            cancelPanel.add(backButton);
+            cancelPanel.add(cancelOrderButton);
+            bottomPanel.add(cancelPanel, BorderLayout.CENTER);
+            
+            panel.add(bottomPanel, BorderLayout.SOUTH);
 
             setContentPane(panel);
+        }
+        
+        private void showCancelOrderDialog() {
+            String[] cancelOptions = {
+                "Berubah pikiran tentang pembayaran",
+                "Metode pembayaran tidak tersedia", 
+                "Terlalu lama menunggu",
+                "Ingin mengubah pesanan",
+                "Lainnya..."
+            };
+            
+            String selectedReason = (String) JOptionPane.showInputDialog(
+                this,
+                "Pilih alasan pembatalan atau ketik alasan Anda:",
+                "Alasan Pembatalan Pesanan",
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                cancelOptions,
+                cancelOptions[0]
+            );
+            
+            if (selectedReason != null) {
+                if ("Lainnya...".equals(selectedReason)) {
+                    selectedReason = JOptionPane.showInputDialog(
+                        this,
+                        "Masukkan alasan pembatalan:",
+                        "Alasan Pembatalan",
+                        JOptionPane.PLAIN_MESSAGE
+                    );
+                    
+                    if (selectedReason == null || selectedReason.trim().isEmpty()) {
+                        selectedReason = "Dibatalkan saat pembayaran";
+                    }
+                }
+                
+                // Confirm cancellation
+                int confirm = JOptionPane.showConfirmDialog(this,
+                    "Apakah Anda yakin ingin membatalkan pesanan?\n" +
+                    "ID Pesanan: " + orderId + "\n" +
+                    "Total: Rp " + String.format("%,d", totalAmount) + "\n" +
+                    "Alasan: " + selectedReason,
+                    "Konfirmasi Pembatalan",
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.QUESTION_MESSAGE);
+                
+                if (confirm == JOptionPane.YES_OPTION) {
+                    parentFrame.cancelOrder(orderId, selectedReason);
+                    dispose(); // Close payment dialog
+                }
+            }
         }
 
         public String getSelectedPaymentMethod() {
@@ -963,7 +1226,7 @@ public class CustomerFrame extends JFrame {
 
         private void showQRISPopup() {
             JDialog qrisDialog = new JDialog(this, "Pembayaran QRIS", true);
-            qrisDialog.setSize(350, 450);
+            qrisDialog.setSize(350, 500); // Increased height for cancel button
             qrisDialog.setLocationRelativeTo(this);
 
             JPanel contentPanel = new JPanel(new BorderLayout(10, 10));
@@ -997,9 +1260,20 @@ public class CustomerFrame extends JFrame {
                 processPayment();
                 dispose();
             });
+            
+            JButton cancelQrisButton = new JButton("Batalkan Pesanan");
+            cancelQrisButton.setPreferredSize(new Dimension(200, 40));
+            cancelQrisButton.setBackground(new Color(220, 53, 69));
+            cancelQrisButton.setForeground(Color.WHITE);
+            cancelQrisButton.setFocusPainted(false);
+            cancelQrisButton.addActionListener(e -> {
+                qrisDialog.dispose();
+                showCancelOrderDialog();
+            });
 
-            JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+            JPanel buttonPanel = new JPanel(new GridLayout(2, 1, 0, 10));
             buttonPanel.add(okButton);
+            buttonPanel.add(cancelQrisButton);
 
             contentPanel.add(barcodeLabel, BorderLayout.NORTH);
             contentPanel.add(detailLabel, BorderLayout.CENTER);
