@@ -1,6 +1,5 @@
 package view;
 
-
 import java.sql.Timestamp;
 
 public class PesananDibatalkan {

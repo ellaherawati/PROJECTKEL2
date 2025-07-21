@@ -1,6 +1,5 @@
 package view;
 
-
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -13,7 +12,7 @@ public class PesananDibatalkanDAO {
     }
 
     public boolean create(PesananDibatalkan pesananBatal) {
-        String sql = "INSERT INTO Pesanan_Dibatalkan (id_pesanan, tanggal_batal, alasan_batal) VALUES (?, ?, ?)";
+        String sql = "INSERT INTO PesananDibatalkan (id_pesanan, tanggal_batal, alasan_batal) VALUES (?, ?, ?)";
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             stmt.setInt(1, pesananBatal.getIdPesanan());
             stmt.setTimestamp(2, pesananBatal.getTanggalBatal());
@@ -26,7 +25,7 @@ public class PesananDibatalkanDAO {
     }
 
     public PesananDibatalkan findByOrderId(int idPesanan) {
-        String sql = "SELECT * FROM Pesanan_Dibatalkan WHERE id_pesanan = ?";
+        String sql = "SELECT * FROM PesananDibatalkan WHERE id_pesanan = ?";
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             stmt.setInt(1, idPesanan);
             ResultSet rs = stmt.executeQuery();
@@ -46,7 +45,7 @@ public class PesananDibatalkanDAO {
 
     public List<PesananDibatalkan> findAll() {
         List<PesananDibatalkan> pesananBatals = new ArrayList<>();
-        String sql = "SELECT * FROM Pesanan_Dibatalkan ORDER BY tanggal_batal DESC";
+        String sql = "SELECT * FROM PesananDibatalkan ORDER BY tanggal_batal DESC";
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             ResultSet rs = stmt.executeQuery();
             while (rs.next()) {
@@ -61,16 +60,5 @@ public class PesananDibatalkanDAO {
             e.printStackTrace();
         }
         return pesananBatals;
-    }
-
-    public boolean delete(int idBatal) {
-        String sql = "DELETE FROM Pesanan_Dibatalkan WHERE id_batal = ?";
-        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
-            stmt.setInt(1, idBatal);
-            return stmt.executeUpdate() > 0;
-        } catch (SQLException e) {
-            e.printStackTrace();
-            return false;
-        }
     }
 }

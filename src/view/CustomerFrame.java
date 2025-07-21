@@ -26,8 +26,8 @@ public class CustomerFrame extends JFrame {
     private PesananDibatalkanDAO pesananDibatalkanDAO; // Added for cancel order
     
     // Current user info
-    private int currentUserId = 4; // Default customer ID, bisa diubah sesuai login
-    private String currentCustomerName = "Customer";
+    private int currentUserId = -1; // Will be set during checkout
+    private String currentCustomerName = null; // Will be set during checkout
     
     // Data untuk menu items
     private List<MenuItem> menuItems;
@@ -36,6 +36,7 @@ public class CustomerFrame extends JFrame {
     private JPanel cartPanel;
     private JScrollPane cartScrollPane;
     private NumberFormat currencyFormat;
+    private JLabel welcomeLabel; // For dynamic header updates
     
     // Menu item class
     static class MenuItem {
@@ -138,9 +139,6 @@ public class CustomerFrame extends JFrame {
         initializeComponents();
         setupLayout();
         setupEventHandlers();
-        
-        // Set current customer info
-        setCurrentCustomerInfo();
     }
     
     private void initializeDAOs() {
@@ -151,19 +149,6 @@ public class CustomerFrame extends JFrame {
         menuDAO = new MenuDAO();
         userDAO = new UserDAO();
         pesananDibatalkanDAO = new PesananDibatalkanDAO(); // Initialize cancel order DAO
-    }
-    
-    private void setCurrentCustomerInfo() {
-        // Get customer info from database
-        try {
-            User user = userDAO.findById(currentUserId);
-            if (user != null) {
-                currentCustomerName = user.getNama();
-            }
-        } catch (Exception e) {
-            System.err.println("Error getting customer info: " + e.getMessage());
-            currentCustomerName = "Customer"; // fallback
-        }
     }
     
     private void initializeMenuData() {
@@ -329,8 +314,12 @@ public class CustomerFrame extends JFrame {
         headerPanel.setBackground(new Color(217, 217, 217));
         headerPanel.setBorder(BorderFactory.createEmptyBorder(20, 30, 20, 30));
         
-        // Welcome text with customer name
-        JLabel welcomeLabel = new JLabel("Welcome, " + currentCustomerName);
+        // Welcome text with dynamic customer name
+        String welcomeText = currentCustomerName != null && !currentCustomerName.isEmpty()
+            ? "Welcome, " + currentCustomerName 
+            : "Welcome to Dapur Arunika";
+        
+        welcomeLabel = new JLabel(welcomeText);
         welcomeLabel.setForeground(Color.BLACK);
         welcomeLabel.setFont(new Font("Arial", Font.PLAIN, 18));
         welcomeLabel.setHorizontalAlignment(SwingConstants.CENTER);
@@ -835,14 +824,32 @@ public class CustomerFrame extends JFrame {
 
         JLabel summaryLabel = new JLabel(orderSummaryHtml.toString());
 
-        // Panel input pesan opsional
+        // Panel input dengan nama customer dan pesan opsional
         JPanel inputPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(5, 5, 5, 5);
 
+        // Input nama customer
         gbc.gridx = 0;
         gbc.gridy = 0;
         gbc.anchor = GridBagConstraints.FIRST_LINE_END;
+        inputPanel.add(new JLabel("Nama Customer: *"), gbc);
+
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        JTextField customerNameField = new JTextField(20);
+        customerNameField.setFont(new Font("Arial", Font.PLAIN, 14));
+        customerNameField.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(200, 200, 200), 1),
+            BorderFactory.createEmptyBorder(5, 8, 5, 8)
+        ));
+        inputPanel.add(customerNameField, gbc);
+
+        // Input pesan opsional
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        gbc.anchor = GridBagConstraints.FIRST_LINE_END;
+        gbc.fill = GridBagConstraints.NONE;
         inputPanel.add(new JLabel("Pesan (Opsional):"), gbc);
 
         gbc.gridx = 1;
@@ -850,6 +857,7 @@ public class CustomerFrame extends JFrame {
         JTextArea messageArea = new JTextArea(5, 20);
         messageArea.setLineWrap(true);
         messageArea.setWrapStyleWord(true);
+        messageArea.setFont(new Font("Arial", Font.PLAIN, 12));
         JScrollPane scrollPane = new JScrollPane(messageArea);
         inputPanel.add(scrollPane, gbc);
 
@@ -883,7 +891,7 @@ public class CustomerFrame extends JFrame {
 
         // Create custom dialog
         JDialog orderDialog = new JDialog(this, "Konfirmasi Pesanan", true);
-        orderDialog.setSize(450, 400);
+        orderDialog.setSize(450, 450); // Increased height for customer name field
         orderDialog.setLocationRelativeTo(this);
         orderDialog.setContentPane(mainPanel);
         
@@ -891,6 +899,15 @@ public class CustomerFrame extends JFrame {
         final boolean[] shouldCancel = {false};
         
         continueButton.addActionListener(e -> {
+            String customerName = customerNameField.getText().trim();
+            if (customerName.isEmpty()) {
+                JOptionPane.showMessageDialog(orderDialog,
+                    "Nama customer harus diisi!",
+                    "Validasi Error",
+                    JOptionPane.WARNING_MESSAGE);
+                customerNameField.requestFocus();
+                return;
+            }
             dialogResult[0] = true;
             orderDialog.dispose();
         });
@@ -960,7 +977,22 @@ public class CustomerFrame extends JFrame {
             return; // User clicked back or closed dialog
         }
 
+        String customerName = customerNameField.getText().trim();
         String messageOptional = messageArea.getText().trim();
+
+        // Simpan atau update customer ke database
+        int customerId = saveOrUpdateCustomer(customerName);
+        if (customerId <= 0) {
+            JOptionPane.showMessageDialog(this, 
+                "Gagal menyimpan data customer!", 
+                "Error", 
+                JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // Update current user info
+        currentUserId = customerId;
+        currentCustomerName = customerName;
 
         // Simpan pesanan ke database
         try {
@@ -969,7 +1001,7 @@ public class CustomerFrame extends JFrame {
                 new Timestamp(System.currentTimeMillis()),
                 (double) total,
                 messageOptional.isEmpty() ? null : messageOptional,
-                currentUserId,
+                customerId, // Use the customer ID from database
                 "pending"
             );
             
@@ -1023,6 +1055,7 @@ public class CustomerFrame extends JFrame {
             } else {
                 JOptionPane.showMessageDialog(this, 
                     "Pesanan berhasil disimpan!\nID Pesanan: " + orderId + 
+                    "\nCustomer: " + customerName +
                     "\nSilakan lanjutkan ke pembayaran.", 
                     "Pesanan Berhasil", JOptionPane.INFORMATION_MESSAGE);
             }
@@ -1038,275 +1071,640 @@ public class CustomerFrame extends JFrame {
         }
     }
 
-    // PaymentMethodDialog class with cancel order integration
-    class PaymentMethodDialog extends JDialog {
-        private int orderId;
-        private int totalAmount;
-        private String selectedPaymentMethod;
-        private CustomerFrame parentFrame;
-        private List<OrderItem> savedOrderItems;
-
-        public PaymentMethodDialog(Frame parent, int orderId, int totalAmount, List<OrderItem> savedOrderItems) {
-            super(parent, "Metode Pembayaran", true);
-            this.orderId = orderId;
-            this.totalAmount = totalAmount;
-            this.parentFrame = (CustomerFrame) parent;
-            this.savedOrderItems = new ArrayList<>(savedOrderItems);
-
-            setSize(400, 300); // Increased height for cancel button
-            setLocationRelativeTo(parent);
-
-            JPanel panel = new JPanel();
-            panel.setLayout(new BorderLayout());
-
-            JLabel titleLabel = new JLabel(
-                "<html><center><h2>Metode Pembayaran</h2>ID Pesanan: " + orderId + 
-                "<br>Total: Rp " + String.format("%,d", totalAmount) + "</center></html>",
-                SwingConstants.CENTER);
-            panel.add(titleLabel, BorderLayout.NORTH);
-
-            // Panel tombol metode pembayaran
-            JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 30, 20));
-
-            // Tombol Cash
-            JButton cashButton = new JButton("Cash");
-            cashButton.setPreferredSize(new Dimension(120, 80));
-            cashButton.setBackground(new Color(40, 167, 69));
-            cashButton.setForeground(Color.WHITE);
-            cashButton.setFocusPainted(false);
-            cashButton.addActionListener(e -> {
-                selectedPaymentMethod = "cash";
-                processPayment();
-                dispose();
-            });
-
-            // Tombol QRIS
-            JButton qrisButton = new JButton("QRIS");
-            qrisButton.setPreferredSize(new Dimension(120, 80));
-            qrisButton.setBackground(new Color(0, 123, 255));
-            qrisButton.setForeground(Color.WHITE);
-            qrisButton.setFocusPainted(false);
-            qrisButton.addActionListener(e -> {
-                selectedPaymentMethod = "qris";
-                showQRISPopup();
-            });
-
-            btnPanel.add(cashButton);
-            btnPanel.add(qrisButton);
-
-            panel.add(btnPanel, BorderLayout.CENTER);
-
-            // Panel tombol batal dengan opsi cancel order
-            JPanel bottomPanel = new JPanel(new BorderLayout());
-            
-            JButton cancelOrderButton = new JButton("Batalkan Pesanan");
-            cancelOrderButton.setBackground(new Color(220, 53, 69));
-            cancelOrderButton.setForeground(Color.WHITE);
-            cancelOrderButton.setFocusPainted(false);
-            cancelOrderButton.addActionListener(e -> showCancelOrderDialog());
-            
-            JButton backButton = new JButton("Kembali");
-            backButton.setBackground(new Color(108, 117, 125));
-            backButton.setForeground(Color.WHITE);
-            backButton.setFocusPainted(false);
-            backButton.addActionListener(e -> {
-                selectedPaymentMethod = null;
-                dispose();
-            });
-            
-            JPanel cancelPanel = new JPanel(new FlowLayout());
-            cancelPanel.add(backButton);
-            cancelPanel.add(cancelOrderButton);
-            bottomPanel.add(cancelPanel, BorderLayout.CENTER);
-            
-            panel.add(bottomPanel, BorderLayout.SOUTH);
-
-            setContentPane(panel);
-        }
-        
-        private void showCancelOrderDialog() {
-            String[] cancelOptions = {
-                "Berubah pikiran tentang pembayaran",
-                "Metode pembayaran tidak tersedia", 
-                "Terlalu lama menunggu",
-                "Ingin mengubah pesanan",
-                "Lainnya..."
-            };
-            
-            String selectedReason = (String) JOptionPane.showInputDialog(
-                this,
-                "Pilih alasan pembatalan atau ketik alasan Anda:",
-                "Alasan Pembatalan Pesanan",
-                JOptionPane.QUESTION_MESSAGE,
-                null,
-                cancelOptions,
-                cancelOptions[0]
-            );
-            
-            if (selectedReason != null) {
-                if ("Lainnya...".equals(selectedReason)) {
-                    selectedReason = JOptionPane.showInputDialog(
-                        this,
-                        "Masukkan alasan pembatalan:",
-                        "Alasan Pembatalan",
-                        JOptionPane.PLAIN_MESSAGE
-                    );
-                    
-                    if (selectedReason == null || selectedReason.trim().isEmpty()) {
-                        selectedReason = "Dibatalkan saat pembayaran";
-                    }
-                }
-                
-                // Confirm cancellation
-                int confirm = JOptionPane.showConfirmDialog(this,
-                    "Apakah Anda yakin ingin membatalkan pesanan?\n" +
-                    "ID Pesanan: " + orderId + "\n" +
-                    "Total: Rp " + String.format("%,d", totalAmount) + "\n" +
-                    "Alasan: " + selectedReason,
-                    "Konfirmasi Pembatalan",
-                    JOptionPane.YES_NO_OPTION,
-                    JOptionPane.QUESTION_MESSAGE);
-                
-                if (confirm == JOptionPane.YES_OPTION) {
-                    parentFrame.cancelOrder(orderId, selectedReason);
-                    dispose(); // Close payment dialog
+    /**
+     * Save or update customer information in database
+     * @param customerName Name of the customer
+     * @return Customer ID from database, or -1 if failed
+     */
+    private int saveOrUpdateCustomer(String customerName) {
+        try {
+            // Check if customer already exists by name
+            List<User> allUsers = userDAO.findAll();
+            for (User user : allUsers) {
+                if (user.getNama().equalsIgnoreCase(customerName) && 
+                    "customer".equalsIgnoreCase(user.getRole())) {
+                    // Customer already exists, return existing ID
+                    System.out.println("Existing customer found: " + customerName + " (ID: " + user.getUserId() + ")");
+                    return user.getUserId();
                 }
             }
+            
+            // Customer doesn't exist, create new one
+            // Generate unique username based on name and timestamp
+            String username = generateCustomerUsername(customerName);
+            
+            User newCustomer = new User(
+                username,
+                "default123", // Default password for customers
+                customerName,
+                "customer"
+            );
+            
+            if (userDAO.create(newCustomer)) {
+                // Get the newly created customer ID
+                User createdUser = userDAO.findByUsername(username);
+                if (createdUser != null) {
+                    System.out.println("New customer created: " + customerName + " (ID: " + createdUser.getUserId() + ")");
+                    return createdUser.getUserId();
+                }
+            }
+            
+            System.err.println("Failed to create customer: " + customerName);
+            return -1;
+            
+        } catch (Exception e) {
+            System.err.println("Error saving customer: " + e.getMessage());
+            e.printStackTrace();
+            return -1;
         }
+    }
 
-        public String getSelectedPaymentMethod() {
-            return selectedPaymentMethod;
+    /**
+     * Generate unique username for customer
+     * @param customerName Customer name
+     * @return Generated username
+     */
+    private String generateCustomerUsername(String customerName) {
+        // Remove spaces and convert to lowercase
+        String baseUsername = customerName.toLowerCase().replaceAll("\\s+", "");
+        
+        // Add timestamp to ensure uniqueness
+        long timestamp = System.currentTimeMillis();
+        String timestampSuffix = String.valueOf(timestamp).substring(8); // Last 5 digits
+        
+        return "cust_" + baseUsername + "_" + timestampSuffix;
+    }
+
+    /**
+     * Update header with customer name after successful transaction
+     */
+    private void updateHeaderWithCustomerName() {
+        if (welcomeLabel != null && currentCustomerName != null && !currentCustomerName.isEmpty()) {
+            welcomeLabel.setText("Welcome, " + currentCustomerName);
+            welcomeLabel.revalidate();
+            welcomeLabel.repaint();
         }
+    }
 
-        private void processPayment() {
-            try {
-                // 1. Update status pesanan
-                customerOrderDAO.updateStatus(orderId, "selesai");
-                
-                // 2. Buat record pembayaran
-                Pembayaran pembayaran = new Pembayaran(
+    // PaymentMethodDialog class with cancel order integration
+   // Modifikasi untuk PaymentMethodDialog class dalam CustomerFrame.java
+
+class PaymentMethodDialog extends JDialog {
+    private int orderId;
+    private int totalAmount;
+    private String selectedPaymentMethod;
+    private CustomerFrame parentFrame;
+    private List<OrderItem> savedOrderItems;
+
+    public PaymentMethodDialog(Frame parent, int orderId, int totalAmount, List<OrderItem> savedOrderItems) {
+        super(parent, "Metode Pembayaran", true);
+        this.orderId = orderId;
+        this.totalAmount = totalAmount;
+        this.parentFrame = (CustomerFrame) parent;
+        this.savedOrderItems = new ArrayList<>(savedOrderItems);
+
+        setSize(400, 300);
+        setLocationRelativeTo(parent);
+
+        JPanel panel = new JPanel();
+        panel.setLayout(new BorderLayout());
+
+        JLabel titleLabel = new JLabel(
+            "<html><center><h2>Metode Pembayaran</h2>ID Pesanan: " + orderId + 
+            "<br>Total: Rp " + String.format("%,d", totalAmount) + "</center></html>",
+            SwingConstants.CENTER);
+        panel.add(titleLabel, BorderLayout.NORTH);
+
+        // Panel tombol metode pembayaran
+        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 30, 20));
+
+        // Tombol Cash - Modified to require cashier confirmation
+        JButton cashButton = new JButton("Cash");
+        cashButton.setPreferredSize(new Dimension(120, 80));
+        cashButton.setBackground(new Color(40, 167, 69));
+        cashButton.setForeground(Color.WHITE);
+        cashButton.setFocusPainted(false);
+        cashButton.addActionListener(e -> {
+            selectedPaymentMethod = "cash";
+            processCashPayment(); // Modified method for cash payment
+            dispose();
+        });
+
+        // Tombol QRIS - Immediate payment
+        JButton qrisButton = new JButton("QRIS");
+        qrisButton.setPreferredSize(new Dimension(120, 80));
+        qrisButton.setBackground(new Color(0, 123, 255));
+        qrisButton.setForeground(Color.WHITE);
+        qrisButton.setFocusPainted(false);
+        qrisButton.addActionListener(e -> {
+            selectedPaymentMethod = "qris";
+            showQRISPopup();
+        });
+
+        btnPanel.add(cashButton);
+        btnPanel.add(qrisButton);
+
+        panel.add(btnPanel, BorderLayout.CENTER);
+
+        // Panel tombol batal dengan opsi cancel order
+        JPanel bottomPanel = new JPanel(new BorderLayout());
+        
+        JButton cancelOrderButton = new JButton("Batalkan Pesanan");
+        cancelOrderButton.setBackground(new Color(220, 53, 69));
+        cancelOrderButton.setForeground(Color.WHITE);
+        cancelOrderButton.setFocusPainted(false);
+        cancelOrderButton.addActionListener(e -> showCancelOrderDialog());
+        
+        JButton backButton = new JButton("Kembali");
+        backButton.setBackground(new Color(108, 117, 125));
+        backButton.setForeground(Color.WHITE);
+        backButton.setFocusPainted(false);
+        backButton.addActionListener(e -> {
+            selectedPaymentMethod = null;
+            dispose();
+        });
+        
+        JPanel cancelPanel = new JPanel(new FlowLayout());
+        cancelPanel.add(backButton);
+        cancelPanel.add(cancelOrderButton);
+        bottomPanel.add(cancelPanel, BorderLayout.CENTER);
+        
+        panel.add(bottomPanel, BorderLayout.SOUTH);
+
+        setContentPane(panel);
+    }
+
+    /**
+     * Process cash payment - requires cashier confirmation
+     */
+    private void processCashPayment() {
+        try {
+            // 1. Update status pesanan to 'menunggu_pembayaran'
+            customerOrderDAO.updateStatus(orderId, "menunggu_pembayaran");
+            
+            // 2. Create payment record with 'menunggu' status
+            Pembayaran pembayaran = new Pembayaran(
+                orderId,
+                2, // Default kasir ID (akan diupdate saat konfirmasi)
+                new Timestamp(System.currentTimeMillis()),
+                selectedPaymentMethod,
+                (double) totalAmount,
+                "menunggu" // Status menunggu konfirmasi kasir
+            );
+            
+            if (pembayaranDAO.create(pembayaran)) {
+                // 3. Create nota with 'menunggu' status
+                Nota nota = new Nota(
                     orderId,
-                    2, // Default kasir ID (bisa disesuaikan)
                     new Timestamp(System.currentTimeMillis()),
-                    selectedPaymentMethod,
                     (double) totalAmount,
-                    "berhasil"
+                    selectedPaymentMethod,
+                    "menunggu" // Status menunggu konfirmasi
                 );
                 
-                if (pembayaranDAO.create(pembayaran)) {
-                    // 3. Buat nota
-                    Nota nota = new Nota(
-                        orderId,
-                        new Timestamp(System.currentTimeMillis()),
-                        (double) totalAmount,
-                        selectedPaymentMethod,
-                        "berhasil"
-                    );
-                    
-                    if (notaDAO.create(nota)) {
-                        showNotaDetail();
+                if (notaDAO.create(nota)) {
+                    // Get the generated nota ID for display
+                    Nota createdNota = notaDAO.findByOrderId(orderId);
+                    if (createdNota != null) {
+                        showCashPaymentPending(createdNota.getIdNota());
                     } else {
-                        JOptionPane.showMessageDialog(this, 
-                            "Pembayaran berhasil, tetapi nota gagal dibuat.", 
-                            "Peringatan", JOptionPane.WARNING_MESSAGE);
+                        // Fallback if nota ID retrieval fails
+                        showCashPaymentPending(orderId);
                     }
                 } else {
                     JOptionPane.showMessageDialog(this, 
-                        "Gagal menyimpan data pembayaran!", 
-                        "Error", JOptionPane.ERROR_MESSAGE);
+                        "Pesanan berhasil dibuat, tetapi nota gagal dibuat.", 
+                        "Peringatan", JOptionPane.WARNING_MESSAGE);
                 }
-                
-            } catch (Exception e) {
-                e.printStackTrace();
+            } else {
                 JOptionPane.showMessageDialog(this, 
-                    "Error saat memproses pembayaran: " + e.getMessage(), 
+                    "Gagal menyimpan data pembayaran!", 
                     "Error", JOptionPane.ERROR_MESSAGE);
             }
-        }
-
-        private void showQRISPopup() {
-            JDialog qrisDialog = new JDialog(this, "Pembayaran QRIS", true);
-            qrisDialog.setSize(350, 500); // Increased height for cancel button
-            qrisDialog.setLocationRelativeTo(this);
-
-            JPanel contentPanel = new JPanel(new BorderLayout(10, 10));
-            contentPanel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
-
-            int qrSize = 200;
-
-            // QR Code placeholder
-            JLabel barcodeLabel = new JLabel();
-            barcodeLabel.setPreferredSize(new Dimension(qrSize, qrSize));
-            barcodeLabel.setBorder(BorderFactory.createLineBorder(Color.BLACK));
-            barcodeLabel.setHorizontalAlignment(SwingConstants.CENTER);
-            barcodeLabel.setVerticalAlignment(SwingConstants.CENTER);
-            barcodeLabel.setText("<html><center>QR CODE<br>PLACEHOLDER</center></html>");
-            barcodeLabel.setBackground(new Color(240, 240, 240));
-            barcodeLabel.setOpaque(true);
-
-            JLabel detailLabel = new JLabel(
-                "<html><center>ID Pesanan: " + orderId + "<br>Total pembayaran:<br>Rp " + 
-                String.format("%,d", totalAmount) + "<br><br>" +
-                "Silakan scan QR code di atas menggunakan aplikasi QRIS Anda.</center></html>",
-                SwingConstants.CENTER);
-
-            JButton okButton = new JButton("Pembayaran Selesai");
-            okButton.setPreferredSize(new Dimension(200, 40));
-            okButton.setBackground(new Color(40, 167, 69));
-            okButton.setForeground(Color.WHITE);
-            okButton.setFocusPainted(false);
-            okButton.addActionListener(e -> {
-                qrisDialog.dispose();
-                processPayment();
-                dispose();
-            });
             
-            JButton cancelQrisButton = new JButton("Batalkan Pesanan");
-            cancelQrisButton.setPreferredSize(new Dimension(200, 40));
-            cancelQrisButton.setBackground(new Color(220, 53, 69));
-            cancelQrisButton.setForeground(Color.WHITE);
-            cancelQrisButton.setFocusPainted(false);
-            cancelQrisButton.addActionListener(e -> {
-                qrisDialog.dispose();
-                showCancelOrderDialog();
-            });
-
-            JPanel buttonPanel = new JPanel(new GridLayout(2, 1, 0, 10));
-            buttonPanel.add(okButton);
-            buttonPanel.add(cancelQrisButton);
-
-            contentPanel.add(barcodeLabel, BorderLayout.NORTH);
-            contentPanel.add(detailLabel, BorderLayout.CENTER);
-            contentPanel.add(buttonPanel, BorderLayout.SOUTH);
-
-            qrisDialog.setContentPane(contentPanel);
-            qrisDialog.setVisible(true);
+        } catch (Exception e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, 
+                "Error saat memproses pembayaran: " + e.getMessage(), 
+                "Error", JOptionPane.ERROR_MESSAGE);
         }
+    }
 
-        private void showNotaDetail() {
-            String idNota = UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-            showNotaPopup(idNota);
+    /**
+     * Show cash payment pending dialog with nota ID
+     */
+    private void showCashPaymentPending(int notaId) {
+        JDialog pendingDialog = new JDialog(this, "Pembayaran Cash - Menunggu Konfirmasi", true);
+        pendingDialog.setSize(450, 400);
+        pendingDialog.setLocationRelativeTo(this);
+
+        JPanel contentPanel = new JPanel(new BorderLayout(15, 15));
+        contentPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        // Header with status
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        JLabel statusLabel = new JLabel("⏳ MENUNGGU KONFIRMASI KASIR", SwingConstants.CENTER);
+        statusLabel.setFont(new Font("Arial", Font.BOLD, 18));
+        statusLabel.setForeground(new Color(255, 193, 7));
+        
+        JLabel subtitleLabel = new JLabel("Silakan tunjukkan ID Nota ini kepada kasir", SwingConstants.CENTER);
+        subtitleLabel.setFont(new Font("Arial", Font.PLAIN, 14));
+        subtitleLabel.setForeground(new Color(108, 117, 125));
+        
+        headerPanel.add(statusLabel, BorderLayout.NORTH);
+        headerPanel.add(subtitleLabel, BorderLayout.CENTER);
+
+        // Nota ID Display - Make it prominent
+        JPanel notaPanel = new JPanel(new BorderLayout());
+        notaPanel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(255, 193, 7), 3),
+            BorderFactory.createEmptyBorder(20, 20, 20, 20)
+        ));
+        notaPanel.setBackground(new Color(255, 248, 220));
+        
+        JLabel notaLabel = new JLabel("ID NOTA", SwingConstants.CENTER);
+        notaLabel.setFont(new Font("Arial", Font.BOLD, 16));
+        notaLabel.setForeground(new Color(133, 77, 14));
+        
+        JLabel notaIdLabel = new JLabel(String.valueOf(notaId), SwingConstants.CENTER);
+        notaIdLabel.setFont(new Font("Arial", Font.BOLD, 48));
+        notaIdLabel.setForeground(new Color(234, 179, 8));
+        
+        notaPanel.add(notaLabel, BorderLayout.NORTH);
+        notaPanel.add(notaIdLabel, BorderLayout.CENTER);
+
+        // Order details
+        JPanel detailPanel = new JPanel();
+        detailPanel.setLayout(new BoxLayout(detailPanel, BoxLayout.Y_AXIS));
+        detailPanel.setBorder(BorderFactory.createTitledBorder("Detail Pesanan"));
+        
+        JLabel customerLabel = new JLabel("Customer: " + currentCustomerName);
+        customerLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        customerLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        
+        JLabel orderIdLabel = new JLabel("ID Pesanan: " + orderId);
+        orderIdLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+        orderIdLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        
+        JLabel totalLabel = new JLabel("Total Pembayaran: Rp " + String.format("%,d", totalAmount));
+        totalLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        totalLabel.setForeground(new Color(40, 167, 69));
+        totalLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        
+        JLabel methodLabel = new JLabel("Metode: Cash");
+        methodLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+        methodLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        
+        detailPanel.add(customerLabel);
+        detailPanel.add(Box.createVerticalStrut(5));
+        detailPanel.add(orderIdLabel);
+        detailPanel.add(Box.createVerticalStrut(5));
+        detailPanel.add(totalLabel);
+        detailPanel.add(Box.createVerticalStrut(5));
+        detailPanel.add(methodLabel);
+
+        // Instructions
+        JTextArea instructionArea = new JTextArea(
+            "INSTRUKSI PEMBAYARAN CASH:\n\n" +
+            "1. Tunjukkan ID NOTA ini kepada kasir\n" +
+            "2. Berikan uang pembayaran kepada kasir\n" +
+            "3. Kasir akan memasukkan ID Nota ke sistem\n" +
+            "4. Kasir akan mengkonfirmasi pembayaran\n" +
+            "5. Status akan berubah menjadi 'BERHASIL'\n\n" +
+            "Simpan ID Nota ini dengan baik!"
+        );
+        instructionArea.setEditable(false);
+        instructionArea.setBackground(new Color(248, 249, 250));
+        instructionArea.setFont(new Font("Arial", Font.PLAIN, 12));
+        instructionArea.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        // Buttons
+        JPanel buttonPanel = new JPanel(new FlowLayout());
+        
+        JButton printButton = new JButton("Print ID Nota");
+        printButton.setBackground(new Color(59, 130, 246));
+        printButton.setForeground(Color.WHITE);
+        printButton.setFont(new Font("Arial", Font.BOLD, 12));
+        printButton.setFocusPainted(false);
+        printButton.addActionListener(e -> printNotaId(notaId));
+        
+        JButton closeButton = new JButton("Tutup");
+        closeButton.setBackground(new Color(108, 117, 125));
+        closeButton.setForeground(Color.WHITE);
+        closeButton.setFont(new Font("Arial", Font.BOLD, 12));
+        closeButton.setFocusPainted(false);
+        closeButton.addActionListener(e -> {
+            pendingDialog.dispose();
+            parentFrame.updateHeaderWithCustomerName();
+        });
+        
+        buttonPanel.add(printButton);
+        buttonPanel.add(closeButton);
+
+        contentPanel.add(headerPanel, BorderLayout.NORTH);
+        contentPanel.add(notaPanel, BorderLayout.CENTER);
+        
+        JPanel bottomPanel = new JPanel(new BorderLayout());
+        bottomPanel.add(detailPanel, BorderLayout.NORTH);
+        bottomPanel.add(new JScrollPane(instructionArea), BorderLayout.CENTER);
+        bottomPanel.add(buttonPanel, BorderLayout.SOUTH);
+        
+        contentPanel.add(bottomPanel, BorderLayout.SOUTH);
+
+        pendingDialog.setContentPane(contentPanel);
+        pendingDialog.setVisible(true);
+    }
+
+    /**
+     * Print Nota ID for customer
+     */
+    private void printNotaId(int notaId) {
+        JDialog printDialog = new JDialog(this, "Print ID Nota", true);
+        printDialog.setSize(400, 500);
+        printDialog.setLocationRelativeTo(this);
+
+        JPanel contentPanel = new JPanel(new BorderLayout(10, 10));
+        contentPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        // Build printable content
+        StringBuilder receipt = new StringBuilder();
+        receipt.append("========================================\n");
+        receipt.append("         DAPUR ARUNIKA\n");
+        receipt.append("     BUKTI PEMBAYARAN CASH\n");
+        receipt.append("========================================\n\n");
+        receipt.append("ID NOTA: ").append(notaId).append("\n");
+        receipt.append("ID PESANAN: ").append(orderId).append("\n");
+        receipt.append("CUSTOMER: ").append(currentCustomerName).append("\n");
+        receipt.append("TANGGAL: ").append(java.time.LocalDateTime.now()
+                .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))).append("\n");
+        receipt.append("----------------------------------------\n");
+        receipt.append("TOTAL PEMBAYARAN: Rp ").append(String.format("%,d", totalAmount)).append("\n");
+        receipt.append("METODE: CASH\n");
+        receipt.append("STATUS: MENUNGGU KONFIRMASI KASIR\n");
+        receipt.append("----------------------------------------\n\n");
+        receipt.append("INSTRUKSI:\n");
+        receipt.append("1. Tunjukkan bukti ini kepada kasir\n");
+        receipt.append("2. Berikan uang pembayaran\n");
+        receipt.append("3. Tunggu konfirmasi dari kasir\n\n");
+        receipt.append("========================================\n");
+        receipt.append("       Terima kasih!\n");
+        receipt.append("========================================");
+
+        JTextArea textArea = new JTextArea(receipt.toString());
+        textArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 11));
+        textArea.setEditable(false);
+
+        JScrollPane scrollPane = new JScrollPane(textArea);
+        scrollPane.setPreferredSize(new Dimension(360, 400));
+
+        JPanel buttonPanel = new JPanel(new FlowLayout());
+        
+        JButton printBtn = new JButton("Print");
+        printBtn.setBackground(new Color(40, 167, 69));
+        printBtn.setForeground(Color.WHITE);
+        printBtn.setFocusPainted(false);
+        printBtn.addActionListener(e -> {
+            try {
+                boolean printed = textArea.print();
+                if (printed) {
+                    JOptionPane.showMessageDialog(printDialog, 
+                        "Bukti pembayaran berhasil dicetak!", 
+                        "Print Berhasil", JOptionPane.INFORMATION_MESSAGE);
+                    printDialog.dispose();
+                } else {
+                    JOptionPane.showMessageDialog(printDialog, 
+                        "Pencetakan dibatalkan!", 
+                        "Info", JOptionPane.INFORMATION_MESSAGE);
+                }
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(printDialog, 
+                    "Error saat mencetak: " + ex.getMessage(), 
+                    "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+        
+        JButton cancelBtn = new JButton("Batal");
+        cancelBtn.setBackground(new Color(108, 117, 125));
+        cancelBtn.setForeground(Color.WHITE);
+        cancelBtn.setFocusPainted(false);
+        cancelBtn.addActionListener(e -> printDialog.dispose());
+        
+        buttonPanel.add(printBtn);
+        buttonPanel.add(cancelBtn);
+
+        contentPanel.add(new JLabel("Preview Bukti Pembayaran:", SwingConstants.CENTER), BorderLayout.NORTH);
+        contentPanel.add(scrollPane, BorderLayout.CENTER);
+        contentPanel.add(buttonPanel, BorderLayout.SOUTH);
+
+        printDialog.setContentPane(contentPanel);
+        printDialog.setVisible(true);
+    }
+
+    /**
+     * Process QRIS payment - immediate success
+     */
+    private void processPayment() {
+        try {
+            // 1. Update status pesanan
+            customerOrderDAO.updateStatus(orderId, "selesai");
+            
+            // 2. Update payment status to 'berhasil'
+            Pembayaran pembayaran = new Pembayaran(
+                orderId,
+                2, // Default kasir ID
+                new Timestamp(System.currentTimeMillis()),
+                selectedPaymentMethod,
+                (double) totalAmount,
+                "berhasil" // QRIS is immediate success
+            );
+            
+            if (pembayaranDAO.create(pembayaran)) {
+                // 3. Create nota with 'berhasil' status
+                Nota nota = new Nota(
+                    orderId,
+                    new Timestamp(System.currentTimeMillis()),
+                    (double) totalAmount,
+                    selectedPaymentMethod,
+                    "berhasil" // QRIS is immediate success
+                );
+                
+                if (notaDAO.create(nota)) {
+                    showNotaDetail();
+                } else {
+                    JOptionPane.showMessageDialog(this, 
+                        "Pembayaran berhasil, tetapi nota gagal dibuat.", 
+                        "Peringatan", JOptionPane.WARNING_MESSAGE);
+                }
+            } else {
+                JOptionPane.showMessageDialog(this, 
+                    "Gagal menyimpan data pembayaran!", 
+                    "Error", JOptionPane.ERROR_MESSAGE);
+            }
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, 
+                "Error saat memproses pembayaran: " + e.getMessage(), 
+                "Error", JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    // ... (rest of the existing methods remain the same)
+    
+    private void showCancelOrderDialog() {
+        String[] cancelOptions = {
+            "Berubah pikiran tentang pembayaran",
+            "Metode pembayaran tidak tersedia", 
+            "Terlalu lama menunggu",
+            "Ingin mengubah pesanan",
+            "Lainnya..."
+        };
+        
+        String selectedReason = (String) JOptionPane.showInputDialog(
+            this,
+            "Pilih alasan pembatalan atau ketik alasan Anda:",
+            "Alasan Pembatalan Pesanan",
+            JOptionPane.QUESTION_MESSAGE,
+            null,
+            cancelOptions,
+            cancelOptions[0]
+        );
+        
+        if (selectedReason != null) {
+            if ("Lainnya...".equals(selectedReason)) {
+                selectedReason = JOptionPane.showInputDialog(
+                    this,
+                    "Masukkan alasan pembatalan:",
+                    "Alasan Pembatalan",
+                    JOptionPane.PLAIN_MESSAGE
+                );
+                
+                if (selectedReason == null || selectedReason.trim().isEmpty()) {
+                    selectedReason = "Dibatalkan saat pembayaran";
+                }
+            }
+            
+            // Confirm cancellation
+            int confirm = JOptionPane.showConfirmDialog(this,
+                "Apakah Anda yakin ingin membatalkan pesanan?\n" +
+                "ID Pesanan: " + orderId + "\n" +
+                "Total: Rp " + String.format("%,d", totalAmount) + "\n" +
+                "Alasan: " + selectedReason,
+                "Konfirmasi Pembatalan",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE);
+            
+            if (confirm == JOptionPane.YES_OPTION) {
+                parentFrame.cancelOrder(orderId, selectedReason);
+                dispose(); // Close payment dialog
+            }
+        }
+    }
+
+    public String getSelectedPaymentMethod() {
+        return selectedPaymentMethod;
+    }
+
+    private void showQRISPopup() {
+        JDialog qrisDialog = new JDialog(this, "Pembayaran QRIS", true);
+        qrisDialog.setSize(350, 500);
+        qrisDialog.setLocationRelativeTo(this);
+
+        JPanel contentPanel = new JPanel(new BorderLayout(10, 10));
+        contentPanel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+
+        int qrSize = 200;
+
+        // QR Code placeholder
+        JLabel barcodeLabel = new JLabel();
+        barcodeLabel.setPreferredSize(new Dimension(qrSize, qrSize));
+        barcodeLabel.setBorder(BorderFactory.createLineBorder(Color.BLACK));
+        barcodeLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        barcodeLabel.setVerticalAlignment(SwingConstants.CENTER);
+        barcodeLabel.setText("<html><center>QR CODE<br>PLACEHOLDER</center></html>");
+        barcodeLabel.setBackground(new Color(240, 240, 240));
+        barcodeLabel.setOpaque(true);
+
+        JLabel detailLabel = new JLabel(
+            "<html><center>ID Pesanan: " + orderId + "<br>Total pembayaran:<br>Rp " + 
+            String.format("%,d", totalAmount) + "<br><br>" +
+            "Silakan scan QR code di atas menggunakan aplikasi QRIS Anda.</center></html>",
+            SwingConstants.CENTER);
+
+        JButton okButton = new JButton("Pembayaran Selesai");
+        okButton.setPreferredSize(new Dimension(200, 40));
+        okButton.setBackground(new Color(40, 167, 69));
+        okButton.setForeground(Color.WHITE);
+        okButton.setFocusPainted(false);
+        okButton.addActionListener(e -> {
+            qrisDialog.dispose();
+            processPayment();
+            dispose();
+        });
+        
+        JButton cancelQrisButton = new JButton("Batalkan Pesanan");
+        cancelQrisButton.setPreferredSize(new Dimension(200, 40));
+        cancelQrisButton.setBackground(new Color(220, 53, 69));
+        cancelQrisButton.setForeground(Color.WHITE);
+        cancelQrisButton.setFocusPainted(false);
+        cancelQrisButton.addActionListener(e -> {
+            qrisDialog.dispose();
+            showCancelOrderDialog();
+        });
+
+        JPanel buttonPanel = new JPanel(new GridLayout(2, 1, 0, 10));
+        buttonPanel.add(okButton);
+        buttonPanel.add(cancelQrisButton);
+
+        contentPanel.add(barcodeLabel, BorderLayout.NORTH);
+        contentPanel.add(detailLabel, BorderLayout.CENTER);
+        contentPanel.add(buttonPanel, BorderLayout.SOUTH);
+
+        qrisDialog.setContentPane(contentPanel);
+        qrisDialog.setVisible(true);
+    }
+
+    private void showNotaDetail() {
+        String idNota = java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        showNotaPopup(idNota);
+    }
 
         private void showNotaPopup(String idNota) {
             JDialog notaDialog = new JDialog(this, "Nota Pembayaran", true);
-            notaDialog.setSize(400, 550);
+            notaDialog.setSize(400, 600); // Increased height for customer info
             notaDialog.setLocationRelativeTo(this);
             
             JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
             mainPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
             
-            // Header nota
+            // Header nota with customer info
             JPanel headerPanel = new JPanel(new BorderLayout());
             JLabel titleLabel = new JLabel("NOTA PEMBAYARAN", SwingConstants.CENTER);
             titleLabel.setFont(new Font("Arial", Font.BOLD, 18));
+            
+            // Customer and order info
+            JPanel infoPanel = new JPanel();
+            infoPanel.setLayout(new BoxLayout(infoPanel, BoxLayout.Y_AXIS));
+            
+            JLabel customerLabel = new JLabel("Customer: " + currentCustomerName, SwingConstants.CENTER);
+            customerLabel.setFont(new Font("Arial", Font.BOLD, 14));
+            customerLabel.setForeground(new Color(40, 167, 69));
             
             JLabel idLabel = new JLabel("ID Pesanan: " + orderId, SwingConstants.CENTER);
             idLabel.setFont(new Font("Arial", Font.PLAIN, 14));
             idLabel.setForeground(new Color(100, 100, 100));
             
+            JLabel dateLabel = new JLabel("Tanggal: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")), SwingConstants.CENTER);
+            dateLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+            dateLabel.setForeground(new Color(100, 100, 100));
+            
+            infoPanel.add(customerLabel);
+            infoPanel.add(Box.createVerticalStrut(5));
+            infoPanel.add(idLabel);
+            infoPanel.add(dateLabel);
+            
             headerPanel.add(titleLabel, BorderLayout.NORTH);
-            headerPanel.add(idLabel, BorderLayout.CENTER);
+            headerPanel.add(infoPanel, BorderLayout.CENTER);
             
             // Detail pesanan
             JPanel detailPanel = new JPanel();
@@ -1338,9 +1736,9 @@ public class CustomerFrame extends JFrame {
             totalPanel.add(totalTextLabel, BorderLayout.WEST);
             totalPanel.add(totalValueLabel, BorderLayout.EAST);
             
-            // Info pembayaran
+            // Info pembayaran dengan customer name
             JLabel infoLabel = new JLabel("<html><center>Pembayaran dengan " + selectedPaymentMethod.toUpperCase() + 
-                "<br>Customer: " + currentCustomerName + "<br>Terima kasih telah berbelanja!</center></html>", 
+                "<br><br>Terima kasih " + currentCustomerName + "!<br>Selamat menikmati hidangan Anda.</center></html>", 
                 SwingConstants.CENTER);
             infoLabel.setFont(new Font("Arial", Font.PLAIN, 12));
             infoLabel.setForeground(new Color(100, 100, 100));
@@ -1361,7 +1759,11 @@ public class CustomerFrame extends JFrame {
             closeButton.setBackground(new Color(108, 117, 125));
             closeButton.setForeground(Color.WHITE);
             closeButton.setFocusPainted(false);
-            closeButton.addActionListener(e -> notaDialog.dispose());
+            closeButton.addActionListener(e -> {
+                notaDialog.dispose();
+                // Update header with customer name after successful transaction
+                parentFrame.updateHeaderWithCustomerName();
+            });
             
             JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
             buttonPanel.add(printButton);

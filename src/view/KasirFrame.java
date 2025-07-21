@@ -3,6 +3,7 @@ package view;
 import java.awt.*;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
+import java.sql.Timestamp;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.List;
@@ -13,10 +14,13 @@ import javax.swing.table.DefaultTableModel;
 
 public class KasirFrame extends JFrame {
     private RestaurantDAO restaurantDAO;
+    private PembayaranDAO pembayaranDAO;
+    private NotaDAO notaDAO;
+    private CustomerOrderDAO customerOrderDAO;
     
     // Components
     private JTextField idNotaField;
-    private JButton cariButton, clearButton, printButton, exitButton, updateStatusButton;
+    private JButton cariButton, clearButton, printButton, exitButton, confirmPaymentButton;
     private JLabel statusLabel;
     
     // Info Nota Panel
@@ -47,6 +51,9 @@ public class KasirFrame extends JFrame {
 
     public KasirFrame() {
         restaurantDAO = new RestaurantDAO();
+        pembayaranDAO = new PembayaranDAO();
+        notaDAO = new NotaDAO();
+        customerOrderDAO = new CustomerOrderDAO();
         
         initializeComponents();
         setupLayout();
@@ -67,7 +74,7 @@ public class KasirFrame extends JFrame {
         cariButton = new JButton("Cari Nota");
         clearButton = new JButton("Clear");
         printButton = new JButton("Print Nota");
-        updateStatusButton = new JButton("Update Status");
+        confirmPaymentButton = new JButton("Konfirmasi Pembayaran Cash"); // New button
         exitButton = new JButton("Keluar");
         statusLabel = new JLabel("Siap untuk mencari nota...");
         statusLabel.setForeground(Color.BLUE);
@@ -148,7 +155,13 @@ public class KasirFrame extends JFrame {
         
         // Button states
         printButton.setEnabled(false);
-        updateStatusButton.setEnabled(false);
+        confirmPaymentButton.setEnabled(false);
+        
+        // Style confirm payment button
+        confirmPaymentButton.setBackground(new Color(40, 167, 69));
+        confirmPaymentButton.setForeground(Color.WHITE);
+        confirmPaymentButton.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
+        confirmPaymentButton.setFocusPainted(false);
     }
 
     private void setupLayout() {
@@ -315,7 +328,7 @@ public class KasirFrame extends JFrame {
         
         // Button Panel
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        buttonPanel.add(updateStatusButton);
+        buttonPanel.add(confirmPaymentButton); // Add new button
         buttonPanel.add(printButton);
         buttonPanel.add(exitButton);
         
@@ -340,7 +353,7 @@ public class KasirFrame extends JFrame {
         cariButton.addActionListener(e -> cariNota());
         clearButton.addActionListener(e -> clearAllData());
         printButton.addActionListener(e -> printNota());
-        updateStatusButton.addActionListener(e -> updatePaymentStatus());
+        confirmPaymentButton.addActionListener(e -> confirmCashPayment()); // New action
         exitButton.addActionListener(e -> {
             int confirm = JOptionPane.showConfirmDialog(
                 this,
@@ -352,6 +365,122 @@ public class KasirFrame extends JFrame {
                 System.exit(0);
             }
         });
+    }
+
+    /**
+     * New method to confirm cash payment
+     */
+    private void confirmCashPayment() {
+        if (currentNota == null) {
+            JOptionPane.showMessageDialog(this, 
+                "Tidak ada nota yang dimuat!", 
+                "Peringatan", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        if (!"cash".equalsIgnoreCase(currentNota.getMetodePembayaran())) {
+            JOptionPane.showMessageDialog(this, 
+                "Konfirmasi hanya tersedia untuk pembayaran cash!", 
+                "Peringatan", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        if (!"menunggu".equalsIgnoreCase(currentNota.getStatusPembayaran())) {
+            JOptionPane.showMessageDialog(this, 
+                "Pembayaran sudah dikonfirmasi atau dibatalkan!", 
+                "Info", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        
+        // Show confirmation dialog
+        String customerName = restaurantDAO.getCustomerName(currentOrder.getCustomerId());
+        int confirm = JOptionPane.showConfirmDialog(this,
+            "<html><body style='width: 300px;'>" +
+            "<h3>Konfirmasi Pembayaran Cash</h3>" +
+            "<b>ID Nota:</b> " + currentNota.getIdNota() + "<br>" +
+            "<b>Customer:</b> " + customerName + "<br>" +
+            "<b>Total:</b> Rp " + currencyFormat.format(currentNota.getTotalPembayaran()) + "<br><br>" +
+            "Apakah customer sudah memberikan uang pembayaran?" +
+            "</body></html>",
+            "Konfirmasi Pembayaran Cash",
+            JOptionPane.YES_NO_OPTION,
+            JOptionPane.QUESTION_MESSAGE);
+        
+        if (confirm == JOptionPane.YES_OPTION) {
+            // Get kasir information
+            String kasirName = JOptionPane.showInputDialog(this,
+                "Masukkan nama kasir yang mengkonfirmasi:",
+                "Info Kasir",
+                JOptionPane.PLAIN_MESSAGE);
+            
+            if (kasirName == null || kasirName.trim().isEmpty()) {
+                kasirName = "Kasir Default";
+            }
+            
+            try {
+                // Update payment status in database
+                if (updatePaymentStatusToSuccess()) {
+                    // Update display
+                    loadNotaData(currentNota.getIdNota());
+                    
+                    // Show success message
+                    JOptionPane.showMessageDialog(this,
+                        "<html><body style='width: 250px;'>" +
+                        "<h3>✅ Pembayaran Berhasil Dikonfirmasi!</h3>" +
+                        "<b>ID Nota:</b> " + currentNota.getIdNota() + "<br>" +
+                        "<b>Customer:</b> " + customerName + "<br>" +
+                        "<b>Total:</b> Rp " + currencyFormat.format(currentNota.getTotalPembayaran()) + "<br>" +
+                        "<b>Dikonfirmasi oleh:</b> " + kasirName + "<br>" +
+                        "</body></html>",
+                        "Pembayaran Berhasil",
+                        JOptionPane.INFORMATION_MESSAGE);
+                    
+                    statusLabel.setText("Pembayaran berhasil dikonfirmasi!");
+                    statusLabel.setForeground(new Color(40, 167, 69));
+                } else {
+                    JOptionPane.showMessageDialog(this,
+                        "Gagal mengkonfirmasi pembayaran! Silakan coba lagi.",
+                        "Error",
+                        JOptionPane.ERROR_MESSAGE);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+                JOptionPane.showMessageDialog(this,
+                    "Error saat mengkonfirmasi pembayaran: " + e.getMessage(),
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    /**
+     * Update payment status to 'berhasil' in database
+     */
+    private boolean updatePaymentStatusToSuccess() {
+        try {
+            boolean success = true;
+            
+            // 1. Update Nota status
+            currentNota.setStatusPembayaran("berhasil");
+            // Note: You'll need to add an update method to NotaDAO
+            
+            // 2. Update Pembayaran status
+            if (currentPembayaran != null) {
+                currentPembayaran.setStatusPembayaran("berhasil");
+                currentPembayaran.setTanggalPembayaran(new Timestamp(System.currentTimeMillis()));
+                success &= pembayaranDAO.updateStatus(currentPembayaran.getIdPembayaran(), "berhasil");
+            }
+            
+            // 3. Update Customer Order status
+            if (currentOrder != null) {
+                success &= customerOrderDAO.updateStatus(currentOrder.getIdPesanan(), "selesai");
+            }
+            
+            return success;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
     }
 
     private void cariNota() {
@@ -417,7 +546,16 @@ public class KasirFrame extends JFrame {
             statusLabel.setText("Data nota berhasil dimuat!");
             statusLabel.setForeground(Color.GREEN);
             printButton.setEnabled(true);
-            updateStatusButton.setEnabled(true);
+            
+            // Enable confirm payment button only for cash payments with 'menunggu' status
+            if ("cash".equalsIgnoreCase(currentNota.getMetodePembayaran()) && 
+                "menunggu".equalsIgnoreCase(currentNota.getStatusPembayaran())) {
+                confirmPaymentButton.setEnabled(true);
+                statusLabel.setText("Data nota berhasil dimuat! Pembayaran cash menunggu konfirmasi.");
+                statusLabel.setForeground(new Color(255, 193, 7)); // Orange for waiting
+            } else {
+                confirmPaymentButton.setEnabled(false);
+            }
             
         } catch (Exception e) {
             statusLabel.setText("Error: " + e.getMessage());
@@ -432,18 +570,20 @@ public class KasirFrame extends JFrame {
             noNotaLabel.setText(String.valueOf(currentNota.getIdNota()));
             waktuCetakLabel.setText(dateFormat.format(currentNota.getWaktuCetak()));
             idPesananLabel.setText(String.valueOf(currentNota.getIdPesanan()));
-            metodePembayaranNotaLabel.setText(currentNota.getMetodePembayaran());
-            statusPembayaranNotaLabel.setText(currentNota.getStatusPembayaran());
+            metodePembayaranNotaLabel.setText(currentNota.getMetodePembayaran().toUpperCase());
+            statusPembayaranNotaLabel.setText(currentNota.getStatusPembayaran().toUpperCase());
             totalPembayaranNotaLabel.setText("Rp " + currencyFormat.format(currentNota.getTotalPembayaran()));
             
             // Color coding for status
             if ("berhasil".equalsIgnoreCase(currentNota.getStatusPembayaran()) || 
                 "lunas".equalsIgnoreCase(currentNota.getStatusPembayaran())) {
-                statusPembayaranNotaLabel.setForeground(Color.GREEN);
+                statusPembayaranNotaLabel.setForeground(new Color(40, 167, 69)); // Green
             } else if ("gagal".equalsIgnoreCase(currentNota.getStatusPembayaran())) {
-                statusPembayaranNotaLabel.setForeground(Color.RED);
+                statusPembayaranNotaLabel.setForeground(new Color(220, 53, 69)); // Red
+            } else if ("menunggu".equalsIgnoreCase(currentNota.getStatusPembayaran())) {
+                statusPembayaranNotaLabel.setForeground(new Color(255, 193, 7)); // Orange
             } else {
-                statusPembayaranNotaLabel.setForeground(Color.ORANGE);
+                statusPembayaranNotaLabel.setForeground(Color.BLACK);
             }
         }
     }
@@ -454,12 +594,23 @@ public class KasirFrame extends JFrame {
             String customerName = restaurantDAO.getCustomerName(currentOrder.getCustomerId());
             customerNameLabel.setText(customerName);
             tanggalPesananLabel.setText(dateFormat.format(currentOrder.getTanggalPesanan()));
-            statusPesananLabel.setText(currentOrder.getStatusPesanan());
+            statusPesananLabel.setText(currentOrder.getStatusPesanan().toUpperCase());
             totalPesananLabel.setText("Rp " + currencyFormat.format(currentOrder.getTotalPesanan()));
             
             // Handle catatan (notes) - could be null
             String catatan = currentOrder.getCatatan();
             catatanLabel.setText(catatan != null && !catatan.trim().isEmpty() ? catatan : "Tidak ada catatan");
+            
+            // Color coding for order status
+            if ("selesai".equalsIgnoreCase(currentOrder.getStatusPesanan())) {
+                statusPesananLabel.setForeground(new Color(40, 167, 69)); // Green
+            } else if ("menunggu_pembayaran".equalsIgnoreCase(currentOrder.getStatusPesanan())) {
+                statusPesananLabel.setForeground(new Color(255, 193, 7)); // Orange
+            } else if ("dibatalkan".equalsIgnoreCase(currentOrder.getStatusPesanan())) {
+                statusPesananLabel.setForeground(new Color(220, 53, 69)); // Red
+            } else {
+                statusPesananLabel.setForeground(Color.BLACK);
+            }
         }
     }
 
@@ -472,18 +623,20 @@ public class KasirFrame extends JFrame {
             kasirLabel.setText(kasirName);
             
             tanggalPembayaranLabel.setText(dateFormat.format(currentPembayaran.getTanggalPembayaran()));
-            metodePembayaranLabel.setText(currentPembayaran.getMetodePembayaran());
+            metodePembayaranLabel.setText(currentPembayaran.getMetodePembayaran().toUpperCase());
             jumlahPembayaranLabel.setText("Rp " + currencyFormat.format(currentPembayaran.getJumlahPembayaran()));
-            statusPembayaranLabel.setText(currentPembayaran.getStatusPembayaran());
+            statusPembayaranLabel.setText(currentPembayaran.getStatusPembayaran().toUpperCase());
             
             // Color coding for payment status
             if ("berhasil".equalsIgnoreCase(currentPembayaran.getStatusPembayaran()) || 
                 "lunas".equalsIgnoreCase(currentPembayaran.getStatusPembayaran())) {
-                statusPembayaranLabel.setForeground(Color.GREEN);
+                statusPembayaranLabel.setForeground(new Color(40, 167, 69)); // Green
             } else if ("gagal".equalsIgnoreCase(currentPembayaran.getStatusPembayaran())) {
-                statusPembayaranLabel.setForeground(Color.RED);
+                statusPembayaranLabel.setForeground(new Color(220, 53, 69)); // Red
+            } else if ("menunggu".equalsIgnoreCase(currentPembayaran.getStatusPembayaran())) {
+                statusPembayaranLabel.setForeground(new Color(255, 193, 7)); // Orange
             } else {
-                statusPembayaranLabel.setForeground(Color.ORANGE);
+                statusPembayaranLabel.setForeground(Color.BLACK);
             }
         } else {
             // No payment record found
@@ -492,8 +645,8 @@ public class KasirFrame extends JFrame {
             tanggalPembayaranLabel.setText("-");
             metodePembayaranLabel.setText("-");
             jumlahPembayaranLabel.setText("-");
-            statusPembayaranLabel.setText("Belum Dibayar");
-            statusPembayaranLabel.setForeground(Color.RED);
+            statusPembayaranLabel.setText("BELUM DIBAYAR");
+            statusPembayaranLabel.setForeground(new Color(220, 53, 69)); // Red
         }
     }
 
@@ -515,48 +668,13 @@ public class KasirFrame extends JFrame {
         }
     }
 
-    private void updatePaymentStatus() {
-        if (currentNota == null) {
-            JOptionPane.showMessageDialog(this, "Tidak ada data nota untuk diupdate!", "Peringatan", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-        
-        String[] statusOptions = {"berhasil", "gagal", "menunggu"};
-        String currentStatus = currentNota.getStatusPembayaran();
-        
-        String newStatus = (String) JOptionPane.showInputDialog(
-            this,
-            "Pilih status pembayaran baru:",
-            "Update Status Pembayaran",
-            JOptionPane.QUESTION_MESSAGE,
-            null,
-            statusOptions,
-            currentStatus
-        );
-        
-        if (newStatus != null && !newStatus.equals(currentStatus)) {
-            // Here you would typically update the database
-            // For now, we'll just update the display
-            currentNota.setStatusPembayaran(newStatus);
-            if (currentPembayaran != null) {
-                currentPembayaran.setStatusPembayaran(newStatus);
-            }
-            
-            displayNotaData();
-            displayPembayaranData();
-            
-            JOptionPane.showMessageDialog(this, "Status pembayaran berhasil diupdate ke: " + newStatus, 
-                                        "Update Berhasil", JOptionPane.INFORMATION_MESSAGE);
-        }
-    }
-
     private void clearAllData() {
         idNotaField.setText("");
         clearDisplayData();
         statusLabel.setText("Siap untuk mencari nota...");
         statusLabel.setForeground(Color.BLUE);
         printButton.setEnabled(false);
-        updateStatusButton.setEnabled(false);
+        confirmPaymentButton.setEnabled(false);
         idNotaField.requestFocus();
     }
 
@@ -574,6 +692,7 @@ public class KasirFrame extends JFrame {
         customerNameLabel.setText("-");
         tanggalPesananLabel.setText("-");
         statusPesananLabel.setText("-");
+        statusPesananLabel.setForeground(Color.BLACK);
         totalPesananLabel.setText("-");
         catatanLabel.setText("-");
         
@@ -641,8 +760,8 @@ public class KasirFrame extends JFrame {
                       currentOrder != null ? currencyFormat.format(currentOrder.getTotalPesanan()) : "0.00"));
         receipt.append(String.format("TOTAL BAYAR: Rp %s\n", 
                       currencyFormat.format(currentNota.getTotalPembayaran())));
-        receipt.append("Metode Bayar: ").append(currentNota.getMetodePembayaran()).append("\n");
-        receipt.append("Status: ").append(currentNota.getStatusPembayaran()).append("\n");
+        receipt.append("Metode Bayar: ").append(currentNota.getMetodePembayaran().toUpperCase()).append("\n");
+        receipt.append("Status: ").append(currentNota.getStatusPembayaran().toUpperCase()).append("\n");
         
         if (currentPembayaran != null) {
             receipt.append("-------------------------------------\n");

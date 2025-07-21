@@ -14,7 +14,7 @@ public class Pembayaran {
     // Constructors
     public Pembayaran() {}
 
-    public Pembayaran(int idPesanan, int idKasir, Timestamp tanggalPembayaran, 
+    public Pembayaran(int idPesanan, int idKasir, Timestamp tanggalPembayaran,
                      String metodePembayaran, double jumlahPembayaran, String statusPembayaran) {
         this.idPesanan = idPesanan;
         this.idKasir = idKasir;

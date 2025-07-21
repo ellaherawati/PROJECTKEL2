@@ -10,15 +10,57 @@ public class RestaurantDAO {
 
     public RestaurantDAO() {
         this.connection = DatabaseConnection.getConnection();
-        if (this.connection == null) {
-            System.err.println("Failed to establish database connection!");
+    }
+
+    /**
+     * Update nota status by nota ID
+     */
+    public boolean updateNotaStatus(int idNota, String newStatus) {
+        String sql = "UPDATE Nota SET status_pembayaran = ? WHERE id_nota = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, newStatus);
+            stmt.setInt(2, idNota);
+            return stmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
         }
     }
 
-    // Nota methods
+    /**
+     * Update pembayaran status by pembayaran ID
+     */
+    public boolean updatePembayaranStatus(int idPembayaran, String newStatus) {
+        String sql = "UPDATE Pembayaran SET status_pembayaran = ? WHERE id_pembayaran = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, newStatus);
+            stmt.setInt(2, idPembayaran);
+            return stmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    /**
+     * Update customer order status by order ID
+     */
+    public boolean updateOrderStatus(int idPesanan, String newStatus) {
+        String sql = "UPDATE CustomerOrder SET status_pesanan = ? WHERE id_pesanan = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, newStatus);
+            stmt.setInt(2, idPesanan);
+            return stmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    /**
+     * Find nota by ID
+     */
     public Nota findNotaById(int idNota) {
-        if (connection == null) return null;
-        
         String sql = "SELECT * FROM Nota WHERE id_nota = ?";
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             stmt.setInt(1, idNota);
@@ -34,17 +76,16 @@ public class RestaurantDAO {
                 return nota;
             }
         } catch (SQLException e) {
-            System.err.println("SQL Error in findNotaById(): " + e.getMessage());
             e.printStackTrace();
         }
         return null;
     }
 
-    // Customer Order methods
+    /**
+     * Find customer order by ID
+     */
     public CustomerOrder findCustomerOrderById(int idPesanan) {
-        if (connection == null) return null;
-        
-        String sql = "SELECT * FROM Customer_Order WHERE id_pesanan = ?";
+        String sql = "SELECT * FROM CustomerOrder WHERE id_pesanan = ?";
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             stmt.setInt(1, idPesanan);
             ResultSet rs = stmt.executeQuery();
@@ -59,50 +100,15 @@ public class RestaurantDAO {
                 return order;
             }
         } catch (SQLException e) {
-            System.err.println("SQL Error in findCustomerOrderById(): " + e.getMessage());
             e.printStackTrace();
         }
         return null;
     }
 
-    // Order Detail methods
-    public List<OrderDetail> findOrderDetailsByPesananId(int idPesanan) {
-        List<OrderDetail> details = new ArrayList<>();
-        if (connection == null) return details;
-        
-        String sql = """
-            SELECT od.*, m.nama_menu 
-            FROM Order_Detail od 
-            JOIN Menu m ON od.id_menu = m.id_menu 
-            WHERE od.id_pesanan = ?
-            ORDER BY od.order_detail_id
-            """;
-        
-        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
-            stmt.setInt(1, idPesanan);
-            ResultSet rs = stmt.executeQuery();
-            while (rs.next()) {
-                OrderDetail detail = new OrderDetail();
-                detail.setOrderDetailId(rs.getInt("order_detail_id"));
-                detail.setIdPesanan(rs.getInt("id_pesanan"));
-                detail.setIdMenu(rs.getInt("id_menu"));
-                detail.setJumlah(rs.getInt("jumlah"));
-                detail.setHargaSatuan(rs.getDouble("harga_satuan"));
-                detail.setNamaMenu(rs.getString("nama_menu"));
-                detail.setSubtotal(detail.getJumlah() * detail.getHargaSatuan());
-                details.add(detail);
-            }
-        } catch (SQLException e) {
-            System.err.println("SQL Error in findOrderDetailsByPesananId(): " + e.getMessage());
-            e.printStackTrace();
-        }
-        return details;
-    }
-
-    // Pembayaran methods
+    /**
+     * Find pembayaran by pesanan ID
+     */
     public Pembayaran findPembayaranByPesananId(int idPesanan) {
-        if (connection == null) return null;
-        
         String sql = "SELECT * FROM Pembayaran WHERE id_pesanan = ?";
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             stmt.setInt(1, idPesanan);
@@ -119,17 +125,43 @@ public class RestaurantDAO {
                 return pembayaran;
             }
         } catch (SQLException e) {
-            System.err.println("SQL Error in findPembayaranByPesananId(): " + e.getMessage());
             e.printStackTrace();
         }
         return null;
     }
 
-    // Get customer name (assuming there's a customer table or info in User table)
+    /**
+     * Find order details by pesanan ID with menu names
+     */
+    public List<OrderDetail> findOrderDetailsByPesananId(int idPesanan) {
+        List<OrderDetail> details = new ArrayList<>();
+        String sql = "SELECT od.*, m.nama_menu FROM OrderDetail od " +
+                     "JOIN Menu m ON od.id_menu = m.id_menu " +
+                     "WHERE od.id_pesanan = ? ORDER BY od.id_detail";
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setInt(1, idPesanan);
+            ResultSet rs = stmt.executeQuery();
+            while (rs.next()) {
+                OrderDetail detail = new OrderDetail();
+                detail.setIdDetail(rs.getInt("id_detail"));
+                detail.setIdPesanan(rs.getInt("id_pesanan"));
+                detail.setIdMenu(rs.getInt("id_menu"));
+                detail.setJumlah(rs.getInt("jumlah"));
+                detail.setHargaSatuan(rs.getDouble("harga_satuan"));
+                detail.setSubtotal(rs.getDouble("subtotal"));
+                detail.setNamaMenu(rs.getString("nama_menu"));
+                details.add(detail);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return details;
+    }
+
+    /**
+     * Get customer name by customer ID
+     */
     public String getCustomerName(int customerId) {
-        if (connection == null) return "Unknown";
-        
-        // Try User table first
         String sql = "SELECT nama FROM User WHERE user_id = ?";
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             stmt.setInt(1, customerId);
@@ -138,17 +170,16 @@ public class RestaurantDAO {
                 return rs.getString("nama");
             }
         } catch (SQLException e) {
-            System.err.println("SQL Error in getCustomerName(): " + e.getMessage());
             e.printStackTrace();
         }
-        return "Customer #" + customerId;
+        return "Unknown Customer";
     }
 
-    // Get kasir name
+    /**
+     * Get kasir name by kasir ID
+     */
     public String getKasirName(int kasirId) {
-        if (connection == null) return "Unknown";
-        
-        String sql = "SELECT nama FROM User WHERE user_id = ? AND role = 'kasir'";
+        String sql = "SELECT nama FROM User WHERE user_id = ?";
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             stmt.setInt(1, kasirId);
             ResultSet rs = stmt.executeQuery();
@@ -156,33 +187,96 @@ public class RestaurantDAO {
                 return rs.getString("nama");
             }
         } catch (SQLException e) {
-            System.err.println("SQL Error in getKasirName(): " + e.getMessage());
             e.printStackTrace();
         }
-        return "Kasir #" + kasirId;
+        return "Unknown Kasir";
     }
 
-    // Get menu info
-    public Menu getMenuById(int idMenu) {
-        if (connection == null) return null;
-        
-        String sql = "SELECT * FROM Menu WHERE id_menu = ?";
+    /**
+     * Get all pending cash payments for kasir dashboard
+     */
+    public List<Nota> getPendingCashPayments() {
+        List<Nota> pendingNotes = new ArrayList<>();
+        String sql = "SELECT * FROM Nota WHERE metode_pembayaran = 'cash' " +
+                     "AND (status_pembayaran = 'menunggu pembayaran' OR status_pembayaran = 'menunggu') " +
+                     "ORDER BY waktu_cetak DESC";
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
-            stmt.setInt(1, idMenu);
             ResultSet rs = stmt.executeQuery();
-            if (rs.next()) {
-                Menu menu = new Menu();
-                menu.setIdMenu(rs.getInt("id_menu"));
-                menu.setNamaMenu(rs.getString("nama_menu"));
-                menu.setJenisMenu(rs.getString("jenis_menu"));
-                menu.setHarga(rs.getDouble("harga"));
-                menu.setKetersediaan(rs.getString("ketersediaan"));
-                return menu;
+            while (rs.next()) {
+                Nota nota = new Nota();
+                nota.setIdNota(rs.getInt("id_nota"));
+                nota.setIdPesanan(rs.getInt("id_pesanan"));
+                nota.setWaktuCetak(rs.getTimestamp("waktu_cetak"));
+                nota.setTotalPembayaran(rs.getDouble("total_pembayaran"));
+                nota.setMetodePembayaran(rs.getString("metode_pembayaran"));
+                nota.setStatusPembayaran(rs.getString("status_pembayaran"));
+                pendingNotes.add(nota);
             }
         } catch (SQLException e) {
-            System.err.println("SQL Error in getMenuById(): " + e.getMessage());
             e.printStackTrace();
         }
-        return null;
+        return pendingNotes;
+    }
+
+    /**
+     * Get payment statistics for dashboard
+     */
+    public PaymentStats getPaymentStats() {
+        PaymentStats stats = new PaymentStats();
+        
+        // Count pending cash payments
+        String pendingSql = "SELECT COUNT(*) FROM Nota WHERE metode_pembayaran = 'cash' " +
+                           "AND (status_pembayaran = 'menunggu pembayaran' OR status_pembayaran = 'menunggu')";
+        try (PreparedStatement stmt = connection.prepareStatement(pendingSql)) {
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                stats.setPendingCashPayments(rs.getInt(1));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        
+        // Count successful payments today
+        String successfulSql = "SELECT COUNT(*) FROM Nota WHERE status_pembayaran = 'berhasil' " +
+                              "AND DATE(waktu_cetak) = CURDATE()";
+        try (PreparedStatement stmt = connection.prepareStatement(successfulSql)) {
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                stats.setSuccessfulPaymentsToday(rs.getInt(1));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        
+        // Calculate total revenue today
+        String revenueSql = "SELECT COALESCE(SUM(total_pembayaran), 0) FROM Nota " +
+                           "WHERE status_pembayaran = 'berhasil' AND DATE(waktu_cetak) = CURDATE()";
+        try (PreparedStatement stmt = connection.prepareStatement(revenueSql)) {
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                stats.setTotalRevenueToday(rs.getDouble(1));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        
+        return stats;
+    }
+    
+    // Inner class for payment statistics
+    public static class PaymentStats {
+        private int pendingCashPayments;
+        private int successfulPaymentsToday;
+        private double totalRevenueToday;
+        
+        // Getters and setters
+        public int getPendingCashPayments() { return pendingCashPayments; }
+        public void setPendingCashPayments(int pendingCashPayments) { this.pendingCashPayments = pendingCashPayments; }
+        
+        public int getSuccessfulPaymentsToday() { return successfulPaymentsToday; }
+        public void setSuccessfulPaymentsToday(int successfulPaymentsToday) { this.successfulPaymentsToday = successfulPaymentsToday; }
+        
+        public double getTotalRevenueToday() { return totalRevenueToday; }
+        public void setTotalRevenueToday(double totalRevenueToday) { this.totalRevenueToday = totalRevenueToday; }
     }
 }

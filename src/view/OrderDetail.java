@@ -1,15 +1,13 @@
 package view;
 
 public class OrderDetail {
-    private int orderDetailId;
+    private int idDetail;
     private int idPesanan;
     private int idMenu;
     private int jumlah;
     private double hargaSatuan;
-    
-    // Additional fields for display
-    private String namaMenu;
     private double subtotal;
+    private String namaMenu; // Added for display purposes
 
     // Constructors
     public OrderDetail() {}
@@ -23,8 +21,8 @@ public class OrderDetail {
     }
 
     // Getters and Setters
-    public int getOrderDetailId() { return orderDetailId; }
-    public void setOrderDetailId(int orderDetailId) { this.orderDetailId = orderDetailId; }
+    public int getIdDetail() { return idDetail; }
+    public void setIdDetail(int idDetail) { this.idDetail = idDetail; }
     
     public int getIdPesanan() { return idPesanan; }
     public void setIdPesanan(int idPesanan) { this.idPesanan = idPesanan; }
@@ -34,19 +32,19 @@ public class OrderDetail {
     
     public int getJumlah() { return jumlah; }
     public void setJumlah(int jumlah) { 
-        this.jumlah = jumlah;
-        this.subtotal = jumlah * hargaSatuan;
+        this.jumlah = jumlah; 
+        this.subtotal = this.jumlah * this.hargaSatuan; // Auto-calculate subtotal
     }
     
     public double getHargaSatuan() { return hargaSatuan; }
     public void setHargaSatuan(double hargaSatuan) { 
-        this.hargaSatuan = hargaSatuan;
-        this.subtotal = jumlah * hargaSatuan;
+        this.hargaSatuan = hargaSatuan; 
+        this.subtotal = this.jumlah * this.hargaSatuan; // Auto-calculate subtotal
     }
-    
-    public String getNamaMenu() { return namaMenu; }
-    public void setNamaMenu(String namaMenu) { this.namaMenu = namaMenu; }
     
     public double getSubtotal() { return subtotal; }
     public void setSubtotal(double subtotal) { this.subtotal = subtotal; }
+    
+    public String getNamaMenu() { return namaMenu; }
+    public void setNamaMenu(String namaMenu) { this.namaMenu = namaMenu; }
 }

@@ -68,7 +68,7 @@ public class OrderService {
     }
 
     public List<CustomerOrder> getOrdersByCustomer(int customerId) {
-        return orderDAO.findByCustomerId(customerId);
+        return (List<CustomerOrder>) orderDAO.findById(customerId);
     }
 
     public List<OrderDetail> getOrderDetails(int orderId) {
